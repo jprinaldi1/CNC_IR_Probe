@@ -7,8 +7,8 @@
 #define SWITCH_OUTPUT 2 // Output to the BJT transistor that closes the mill's probe circuit
 #define INTERNAL_LED 13 
 #define INDICATOR_LED 3 // Battery indicator LED
-#define PROBE_TRIGGER_PERIOD 5 // Milliseconds for the mill circuit to close after the start of the packet. The actual packet lasts about 25ms, which I have found to be too long for the mill probing routines to function correctly.
-#define BLINK_PERIOD 500 // LED blink rate in milliseconds
+#define PROBE_TRIGGER_PERIOD 15 // Milliseconds for the mill circuit to close after the start of the packet. The actual packet lasts about 25ms, which I have found to be too long for the mill probing routines to function correctly.
+#define BLINK_PERIOD 250 // LED blink rate in milliseconds
 #define MAX_BATT_VOLTS 3.6
 #define MIN_BATT_VOLTAGE 1.5 // Probe volts before the LED starts a warning flash
 unsigned long packetStartTime = 0;
@@ -16,6 +16,7 @@ unsigned long lastLEDUpdate = 0;
 unsigned long lastIndicatorLEDUpdate = 0;
 uint8_t battVoltageRaw = 0;
 float battVoltage = 0;
+bool flashState = false;
 
 enum ProbeState
 {
@@ -42,6 +43,7 @@ void loop()
   if(!digitalRead(IR_RAW) && !packetStartTime) // If its the start of an IR packet
   {
     packetStartTime = millis(); // Record the start time
+    probeState = TRIGGERED;
   }
   if (IrReceiver.decode()) // If the packet is complete
   {
@@ -55,11 +57,11 @@ void loop()
   }
 
   // Evaluate probe state
-  if(millis() > packetStartTime + PROBE_TRIGGER_PERIOD) // If we've been triggered for the PROBE_TRIGGER_PERIOD, go back to sleep
+  if(millis() > packetStartTime + PROBE_TRIGGER_PERIOD && probeState != STARTUP) // If we've been triggered for the PROBE_TRIGGER_PERIOD, go back to sleep
   {
     probeState = SLEEPING;
   }
-  else // Otherwise, trigger
+  else if(probeState != STARTUP) // Otherwise, trigger
   {
     probeState = TRIGGERED;
   }
@@ -69,7 +71,7 @@ void loop()
   {
     digitalWrite(INDICATOR_LED, LOW);
   }
-  else if(battVoltage > MAX_BATT_VOLTS) // Solid if battery is good
+  else if(battVoltage > MIN_BATT_VOLTAGE) // Solid if battery is good
   {
     digitalWrite(INDICATOR_LED, HIGH);
   }
@@ -88,8 +90,10 @@ void loop()
     // Toggling the switch here will cause the Tormach to lock out until it gets a good signal from the probe. It does mean that the probe will need to be actuated manually as part of the startup, but it should help prevent crashes.
     if(millis() > lastLEDUpdate + BLINK_PERIOD)
     {
-      digitalWrite(SWITCH_OUTPUT, !digitalRead(SWITCH_OUTPUT));
-      digitalWrite(INTERNAL_LED, !digitalRead(INTERNAL_LED));
+      digitalWrite(SWITCH_OUTPUT, flashState);
+      digitalWrite(INTERNAL_LED, flashState);
+      Serial.println("flash");
+      flashState = !flashState;
       lastLEDUpdate = millis();
     }
   }  
